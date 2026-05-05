@@ -2,102 +2,182 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>MEME Studio</title>
+<title>MEME Tavern PRO+</title>
 <style>
-body{margin:0;background:#0f172a;color:#fff;font-family:sans-serif}
+body{margin:0;background:#0b1220;color:#e5e7eb;font-family:system-ui}
 #app{display:flex;height:100vh}
-#left{width:40%;border-right:1px solid #333;display:flex;flex-direction:column}
-#chat{flex:1;overflow:auto;padding:10px}
+
+/* 左侧：角色卡槽 */
+#sidebar{width:260px;border-right:1px solid #1f2937;display:flex;flex-direction:column}
+#slots{flex:1;overflow:auto;padding:8px}
+.slot{padding:10px;border:1px solid #1f2937;border-radius:10px;margin-bottom:8px;cursor:pointer;background:#0f172a}
+.slot.active{border-color:#6366f1}
+.slot-title{font-weight:600}
+.slot-desc{font-size:12px;color:#9ca3af}
+
+/* 中间：聊天 */
+#chat{flex:1;display:flex;flex-direction:column}
+.topbar{padding:8px;border-bottom:1px solid #1f2937;background:#0f172a}
+#messages{flex:1;overflow:auto;padding:10px}
 .msg{margin-bottom:10px}
 .user{text-align:right}
-.bubble{display:inline-block;padding:10px;border-radius:10px}
+.bubble{display:inline-block;padding:10px;border-radius:12px;max-width:70%}
 .user .bubble{background:#2563eb}
-.ai .bubble{background:#1e293b}
-#input{display:flex;padding:10px}
-#input input{flex:1}
-#right{width:60%}
-textarea{width:100%;height:100%;background:#020617;color:#fff}
-button{margin:5px;padding:5px 10px}
+.ai .bubble{background:#111827}
+#input{display:flex;padding:10px;border-top:1px solid #1f2937}
+#input input{flex:1;background:#020617;color:#e5e7eb;border:1px solid #1f2937;border-radius:8px;padding:8px}
+
+/* 右侧：编辑器 */
+#editor{width:360px;border-left:1px solid #1f2937;display:flex;flex-direction:column}
+textarea{flex:1;background:#020617;color:#e5e7eb;border:none;padding:10px}
+button{margin:4px;padding:6px 10px;border-radius:8px;border:1px solid #374151;background:#111827;color:#e5e7eb;cursor:pointer}
+button.primary{background:#4f46e5;border-color:#4f46e5}
 </style>
 </head>
 
 <body>
 <div id="app">
 
-<div id="left">
-  <div id="chat"></div>
+<!-- 左：角色卡槽 -->
+<div id="sidebar">
+  <div class="topbar">
+    <button class="primary" onclick="newChar()">+ 新建角色</button>
+    <button onclick="importYAML()">导入YAML</button>
+  </div>
+  <div id="slots"></div>
+</div>
 
+<!-- 中：聊天 -->
+<div id="chat">
+  <div class="topbar">
+    <button onclick="clearChat()">清空</button>
+    <button onclick="exportYAML()">导出YAML</button>
+    <button onclick="saveCloud()">云存档</button>
+  </div>
+  <div id="messages"></div>
   <div id="input">
-    <input id="text"/>
-    <button onclick="send()">发送</button>
+    <input id="text" placeholder="输入 /character /world 或直接聊天…">
+    <button class="primary" onclick="send()">发送</button>
   </div>
 </div>
 
-<div id="right">
-  <textarea id="doc"></textarea>
+<!-- 右：编辑器 -->
+<div id="editor">
+  <div class="topbar">
+    <button onclick="saveCurrent()">保存到当前角色</button>
+    <button onclick="addWorld()">保存为世界书</button>
+  </div>
+  <textarea id="doc" placeholder="这里显示/编辑当前角色卡或最近生成内容…"></textarea>
 </div>
 
 </div>
 
 <script>
+/* ========= 基础状态 ========= */
+let messages = JSON.parse(localStorage.messages || "[]")
+let worldbook = JSON.parse(localStorage.worldbook || "[]")
+let chars = JSON.parse(localStorage.chars || "[]") // 多角色
+let current = JSON.parse(localStorage.current || "null") // 当前角色id
 
-let messages = []
+function persist(){
+  localStorage.messages = JSON.stringify(messages)
+  localStorage.worldbook = JSON.stringify(worldbook)
+  localStorage.chars = JSON.stringify(chars)
+  localStorage.current = JSON.stringify(current)
+}
 
-function render(){
-  const chat = document.getElementById("chat")
-  chat.innerHTML = ""
-
-  messages.forEach(m=>{
+/* ========= 角色卡槽 ========= */
+function renderSlots(){
+  const box = document.getElementById("slots")
+  box.innerHTML = ""
+  chars.forEach(c=>{
     const div = document.createElement("div")
-    div.className = "msg " + (m.role==="user"?"user":"ai")
+    div.className = "slot " + (c.id===current?"active":"")
+    div.onclick = ()=>{ current=c.id; persist(); renderSlots(); loadCharToEditor() }
 
-    const bubble = document.createElement("div")
-    bubble.className = "bubble"
-    bubble.innerText = m.content
+    const t = document.createElement("div")
+    t.className="slot-title"
+    t.innerText = c.name || "未命名角色"
 
-    div.appendChild(bubble)
+    const d = document.createElement("div")
+    d.className="slot-desc"
+    d.innerText = (c.desc||"").slice(0,40)
 
-    // GUI按钮解析
-    const match = m.content.match(/\[GUI\]([\s\S]*?)\[\/GUI\]/)
-    if(match){
-      const lines = match[1].split("\n")
-      let btn
-
-      lines.forEach(l=>{
-        l=l.trim()
-        if(l.startsWith("- text:")){
-          btn = document.createElement("button")
-          btn.innerText = l.replace("- text:","").trim()
-        }
-        if(l.startsWith("action:") && btn){
-          const action = l.replace("action:","").trim()
-          btn.onclick = ()=>send(action)
-          div.appendChild(btn)
-        }
-      })
-    }
-
-    chat.appendChild(div)
+    div.appendChild(t); div.appendChild(d)
+    box.appendChild(div)
   })
 }
 
-async function callAI(input){
+function newChar(){
+  const id = Date.now()
+  chars.push({id, name:"新角色", desc:"", content:""})
+  current = id
+  persist()
+  renderSlots()
+  loadCharToEditor()
+}
 
-  const system = `
-你是MEME角色创作助手：
-- 擅长角色卡
-- 风格清新
+function loadCharToEditor(){
+  const c = chars.find(x=>x.id===current)
+  document.getElementById("doc").value = c?.content || ""
+}
+
+function saveCurrent(){
+  const c = chars.find(x=>x.id===current)
+  if(!c) return alert("先创建或选择一个角色")
+  c.content = document.getElementById("doc").value
+  c.name = c.content.split("\n")[0]?.slice(0,20) || "角色"
+  c.desc = c.content.slice(0,80)
+  persist()
+  renderSlots()
+  alert("已保存到当前角色")
+}
+
+/* ========= 世界书 ========= */
+function addWorld(){
+  const txt = document.getElementById("doc").value
+  const key = prompt("输入触发关键词（例如：夜晚 / 医院 / 战斗）")
+  if(!key) return
+  worldbook.push({keyword:key, content:txt})
+  persist()
+  alert("世界书已添加")
+}
+function worldHit(input){
+  let t=""
+  worldbook.forEach(w=>{
+    if(input.includes(w.keyword)) t += "\n"+w.content
+  })
+  return t
+}
+
+/* ========= Prompt ========= */
+function buildPrompt(input){
+  const c = chars.find(x=>x.id===current)
+  return [
+    {
+      role:"system",
+      content:`
+你是MEME Tavern AI：
+
+【当前角色】
+${c?.content || ""}
+
+【世界触发】
+${worldHit(input)}
+
+【规则】
+- 保持角色一致
+- 写作自然细腻
 - 可以输出GUI按钮
-
-当需要按钮时输出：
-
-[GUI]
-buttons:
- - text: 示例
-   action: /character 示例
-[/GUI]
 `
+    },
+    ...messages.slice(-14),
+    {role:"user",content:input}
+  ]
+}
 
+/* ========= AI ========= */
+async function callAI(input){
   const res = await fetch(localStorage.baseUrl + "/v1/chat/completions",{
     method:"POST",
     headers:{
@@ -105,35 +185,69 @@ buttons:
       "Authorization":"Bearer "+localStorage.apiKey
     },
     body:JSON.stringify({
-      model:localStorage.model,
-      messages:[
-        {role:"system",content:system},
-        ...messages,
-        {role:"user",content:input}
-      ]
+      model: localStorage.model,
+      messages: buildPrompt(input)
     })
   })
-
   const data = await res.json()
-  return data.choices[0].message.content
+  return data.choices?.[0]?.message?.content || ""
+}
+
+/* ========= 聊天 & GUI ========= */
+function render(){
+  const box = document.getElementById("messages")
+  box.innerHTML = ""
+  messages.forEach(m=>{
+    const div=document.createElement("div")
+    div.className="msg "+(m.role==="user"?"user":"ai")
+    const b=document.createElement("div")
+    b.className="bubble"
+    b.innerText=m.content
+    div.appendChild(b)
+
+    // GUI
+    const match=m.content.match(/\[GUI\]([\s\S]*?)\[\/GUI\]/)
+    if(match){
+      match[1].split("\n").forEach(l=>{
+        l=l.trim()
+        if(l.startsWith("- text:")){
+          const btn=document.createElement("button")
+          btn.innerText=l.replace("- text:","").trim()
+          div.appendChild(btn)
+          btn.onclick=()=>{
+            const a = match[1].match(/action:\s*(.+)/)
+            if(a) send(a[1])
+          }
+        }
+      })
+    }
+    box.appendChild(div)
+  })
 }
 
 async function send(cmd){
-
   const input = cmd || document.getElementById("text").value
 
-  let real = input
+  if(input.startsWith("/clear")){
+    messages=[]; persist(); render(); return
+  }
 
   if(input.startsWith("/character")){
-    real = "生成角色卡："+input.replace("/character","")
-  }
-  if(input.startsWith("/clear")){
-    messages=[]
-    render()
+    const res = await callAI("生成完整角色卡："+input.replace("/character",""))
+    document.getElementById("doc").value = res
+    alert("已生成到右侧，点击“保存到当前角色”")
     return
   }
 
-  const res = await callAI(real)
+  if(input.startsWith("/world")){
+    const txt = input.replace("/world","").trim()
+    worldbook.push({keyword:txt, content:"世界设定："+txt})
+    persist()
+    alert("世界书添加")
+    return
+  }
+
+  const res = await callAI(input)
 
   messages.push({role:"user",content:input})
   messages.push({role:"assistant",content:res})
@@ -141,9 +255,58 @@ async function send(cmd){
   document.getElementById("doc").value = res
   document.getElementById("text").value=""
 
+  persist()
   render()
 }
 
+function clearChat(){ messages=[]; persist(); render() }
+
+/* ========= YAML 导入导出 ========= */
+function exportYAML(){
+  const c = chars.find(x=>x.id===current)
+  if(!c) return alert("没有角色")
+  const yaml = `name: ${c.name}\ndesc: |\n  ${c.desc}\ncontent: |\n  ${c.content}`
+  navigator.clipboard.writeText(yaml)
+  alert("已复制YAML")
+}
+
+function importYAML(){
+  const txt = prompt("粘贴YAML")
+  if(!txt) return
+  const name = (txt.match(/name:\s*(.+)/)||[])[1]||"导入角色"
+  const content = (txt.match(/content:\s*\|([\s\S]*)/)||[])[1]||txt
+  const id = Date.now()
+  chars.push({id,name,desc:content.slice(0,80),content})
+  current=id
+  persist()
+  renderSlots()
+  loadCharToEditor()
+}
+
+/* ========= Supabase 云存档（可选） ========= */
+async function saveCloud(){
+  const url = prompt("输入Supabase URL")
+  const key = prompt("输入Anon Key")
+  if(!url || !key) return
+
+  await fetch(url+"/rest/v1/projects",{
+    method:"POST",
+    headers:{
+      "apikey":key,
+      "Authorization":"Bearer "+key,
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({
+      content: JSON.stringify({messages,worldbook,chars})
+    })
+  })
+  alert("已云存档")
+}
+
+/* ========= 初始化 ========= */
+renderSlots()
+loadCharToEditor()
+render()
 </script>
 </body>
 </html>
